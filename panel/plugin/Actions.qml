@@ -18,8 +18,12 @@ ColumnLayout {
   required property string updatingId
   required property color foreground
   required property string fontFamily
+  // omarchy-sync per-machine switches: [{ host, label }] and the hosts this plugin is off for.
+  property var machineHosts: []
+  property var machineOff: []
 
   signal enabledChangeRequested(bool enabled)
+  signal machineChangeRequested(string host, bool on)
   signal openPanelRequested(string pluginId)
   signal sourceRequested(string sourceKey)
   signal updateRequested(string sourceKey)
@@ -39,50 +43,13 @@ ColumnLayout {
     // Active bar options cannot be disabled directly. Their reduced opacity
     // mirrors the native-toggle guard while still allowing disabled plugins
     // to be enabled from this row.
-    Item {
+    RowSwitch {
       id: toggle
 
-      readonly property bool checked: actions.pluginEnabled
-      readonly property bool canToggle: actions.plugin.canDisable || !checked
-      readonly property int trackHeight: Math.max(22, Math.round(Style.spacing.controlHeight * 0.55))
-      readonly property int trackWidth: Math.round(trackHeight * 1.9)
-      readonly property int knobSize: Math.max(6, Math.round(trackHeight * 0.72))
-      readonly property int inset: Math.max(1, Math.round((trackHeight - knobSize) / 2))
-
-      implicitWidth: trackWidth
-      implicitHeight: trackHeight
-      opacity: canToggle ? 1 : 0.4
-      Layout.alignment: Qt.AlignVCenter
-
-      Rectangle {
-        width: toggle.trackWidth
-        height: toggle.trackHeight
-        radius: Style.cornerRadius > 0 ? height / 2 : 0
-        color: toggle.checked
-          ? Commons.Color.accent
-          : Style.normalFillFor(actions.foreground, Commons.Color.accent)
-        Behavior on color { ColorAnimation { duration: 120 } }
-
-        Rectangle {
-          width: toggle.knobSize
-          height: toggle.knobSize
-          radius: Style.cornerRadius > 0 ? height / 2 : 0
-          x: toggle.checked ? toggle.trackWidth - width - toggle.inset : toggle.inset
-          anchors.verticalCenter: parent.verticalCenter
-          color: toggle.checked ? Commons.Color.background : Qt.darker(actions.foreground, 1.25)
-          Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-          Behavior on color { ColorAnimation { duration: 120 } }
-        }
-      }
-
-      MouseArea {
-        anchors.fill: parent
-        cursorShape: toggle.canToggle ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: {
-          if (!toggle.canToggle) return
-          Qt.callLater(function() { actions.enabledChangeRequested(!toggle.checked) })
-        }
-      }
+      checked: actions.pluginEnabled
+      canToggle: actions.plugin.canDisable || !checked
+      foreground: actions.foreground
+      onToggleRequested: function(next) { actions.enabledChangeRequested(next) }
     }
 
     Button {
@@ -173,6 +140,43 @@ ColumnLayout {
       verticalPadding: Style.space(3)
       Layout.fillWidth: true
       onClicked: actions.sourceRequested(actions.plugin.sourceKey)
+    }
+  }
+
+  // One switch per machine (omarchy-sync). Off = that machine doesn't get the plugin;
+  // the switch above stays the global one.
+  RowLayout {
+    visible: actions.machineHosts.length > 1 && !actions.plugin.firstParty
+    Layout.alignment: Qt.AlignRight
+    spacing: Style.space(4)
+
+    Repeater {
+      model: actions.machineHosts
+
+      RowLayout {
+        id: machine
+
+        required property var modelData
+        readonly property bool on: actions.machineOff.indexOf(modelData.host) === -1
+
+        spacing: Style.space(2)
+
+        Label {
+          text: String(machine.modelData.label)
+          color: actions.foreground
+          opacity: machine.on ? 0.85 : 0.45
+          font.family: actions.fontFamily
+          font.pixelSize: Style.font.caption
+          Layout.alignment: Qt.AlignVCenter
+        }
+
+        RowSwitch {
+          checked: machine.on
+          sizeFactor: 0.7
+          foreground: actions.foreground
+          onToggleRequested: function(next) { actions.machineChangeRequested(machine.modelData.host, next) }
+        }
+      }
     }
   }
 }

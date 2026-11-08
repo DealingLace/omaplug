@@ -30,7 +30,10 @@ Item {
   required property var knownKinds
   required property color foreground
   required property string fontFamily
+  property var machineHosts: []
+  property var machineOff: []
 
+  signal machineChangeRequested(string pluginId, string host, bool on)
   signal removalSelectionRequested(string pluginId)
   signal enabledChangeRequested(string pluginId, bool enabled)
   signal openPanelRequested(string pluginId)
@@ -369,8 +372,13 @@ Item {
         updatingId: pluginRow.updatingId
         foreground: pluginRow.foreground
         fontFamily: pluginRow.fontFamily
+        machineHosts: pluginRow.machineHosts
+        machineOff: pluginRow.machineOff
         onEnabledChangeRequested: function(enabled) {
           pluginRow.enabledChangeRequested(pluginRow.modelData.id, enabled)
+        }
+        onMachineChangeRequested: function(host, on) {
+          pluginRow.machineChangeRequested(pluginRow.modelData.id, host, on)
         }
         onOpenPanelRequested: function(pluginId) {
           pluginRow.openPanelRequested(pluginId)

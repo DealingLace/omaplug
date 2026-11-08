@@ -67,6 +67,63 @@ Panel {
       root.refreshPlugins()
     }
   }
+  // omarchy-sync per-machine switches. Empty (and hidden) when omarchy-sync isn't installed.
+  readonly property string machineSyncPath: Quickshell.env("HOME") + "/.local/bin/omarchy-sync"
+  property var machineHosts: []
+  property var machineOff: ({})
+  property string machineThisHost: ""
+  property Process machineListProcess: Process {
+    onExited: function(exitCode) {
+      if (exitCode !== 0) { root.machineHosts = []; return }
+      try {
+        var data = JSON.parse(String(machineListStdout.text || ""))
+        var hosts = []
+        for (var host in data.hosts) hosts.push({ host: host, label: String(data.hosts[host]) })
+        hosts.sort(function(a, b) { return a.label.localeCompare(b.label) })
+        root.machineHosts = hosts
+        root.machineOff = data.off || {}
+        root.machineThisHost = String(data.host || "")
+      } catch (e) {
+        console.warn("Could not parse omarchy-sync machine list:", e)
+      }
+    }
+    stdout: StdioCollector {
+      id: machineListStdout
+      waitForEnd: true
+    }
+  }
+  property Process machineSetProcess: Process {
+    onExited: function(exitCode) {
+      if (exitCode !== 0) console.warn("omarchy-sync machine failed:", machineSetStdout.text)
+      root.refreshMachines()
+    }
+    stdout: StdioCollector {
+      id: machineSetStdout
+      waitForEnd: true
+    }
+  }
+
+  function refreshMachines() {
+    if (root.machineListProcess.running) return
+    root.machineListProcess.command = [root.machineSyncPath, "machine", "--json"]
+    root.machineListProcess.running = true
+  }
+
+  function setMachineEnabled(id, host, on) {
+    if (root.machineSetProcess.running) return
+    // Only writes the config; omarchy-sync's path unit switches the plugin off or on
+    // here a few seconds later, which rebuilds the bar.
+    if (host === root.machineThisHost) root.keepOpenAcrossRebuild()
+    var off = Object.assign({}, root.machineOff)
+    var hosts = (off[id] || []).filter(function(h) { return h !== host })
+    if (!on) hosts.push(host)
+    if (hosts.length) off[id] = hosts
+    else delete off[id]
+    root.machineOff = off
+    root.machineSetProcess.command = [root.machineSyncPath, "machine", id, host, on ? "on" : "off", "--no-run"]
+    root.machineSetProcess.running = true
+  }
+
   property Process pluginManifestProcess: Process {
     onExited: function(exitCode) {
       if (exitCode === 0) root.applyPluginMetadata(pluginManifestStdout.text)
@@ -1503,6 +1560,7 @@ Panel {
   }
 
   function refreshPlugins() {
+    root.refreshMachines()
     if (root.pluginListProcess.running) return
     root.pluginListProcess.command = ["omarchy", "plugin", "list", "--json"]
     root.pluginListProcess.running = true
@@ -2336,7 +2394,12 @@ Panel {
             knownKinds: root.knownKinds
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
+            machineHosts: root.machineHosts
+            machineOff: root.machineOff[String(pluginRow.modelData.id)] || []
 
+            onMachineChangeRequested: function(pluginId, host, on) {
+              root.setMachineEnabled(pluginId, host, on)
+            }
             onRemovalSelectionRequested: function(pluginId) {
               root.toggleRemoveSelection(pluginId)
             }
